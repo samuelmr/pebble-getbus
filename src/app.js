@@ -125,7 +125,7 @@ function getStopLines(response) {
       m = (m < 10) ? "0" + m.toString() + "" : m;
       var s = d.getSeconds();
       s = (s < 10) ? "0" + s.toString() + "" : s;
-      var wind = new UI.Window();
+      var wind = new UI.Window({fullscreen: true});
       var stopfield = new UI.Text({
         position: new Vector2(0, 0),
         size: new Vector2(144, 30),
