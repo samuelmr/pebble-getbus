@@ -15,14 +15,11 @@ var helpId = 'help';
 
 var favorites = Settings.data('favorites') || [];
 // console.log('Found favorites: ' + favorites);
-if (favorites.length > 0) {
-  refreshStops(favorites);  
-}
 
 var info = new UI.Card({
   title: 'Get Bus',
   // icon: 'images/menu_icon.png',
-  subtitle: 'Lahipysakkien tiedot',
+  subtitle: 'Lähipysäkkien tiedot',
   body: 'Paikannetaan...'
 });
 info.show();
@@ -34,18 +31,22 @@ var menu = new UI.Menu({
       items: favorites
     },
     {
-      title: 'Lahimmat',
+      title: 'Lähimmät',
       items: []
     }
   ]
 });
+
+if (favorites.length > 0) {
+  refreshStops(favorites);  
+}
 
 navigator.geolocation.getCurrentPosition(locationSuccess, locationError, locationOptions);
 
 function locationError(error) {
   info.title('Virhe');
   info.subtitle('');
-  info.body('Paikannus ei onnistunut. Kaynnista sovellus uudelleen.');
+  info.body('Paikannus ei onnistunut. Käynnistä sovellus uudelleen.');
   console.warn('location error (' + error.code + '): ' + error.message);
 }
 
@@ -54,7 +55,7 @@ function locationSuccess(position) {
   var lon = position.coords.longitude;
   info.title('Paikannettu');
   info.subtitle(Math.round(lat*100000)/100000 + '\n' + Math.round(lon*100000)/100000);
-  info.body('Haetaan pysakit...');
+  info.body('Haetaan pysäkit...');
   // console.log("Got location " + lat + ',' + lon);
   var href = stopsURI + '&lat=' + lat + '&lon=' + lon;
   // console.log("Getting " + href);
@@ -79,19 +80,21 @@ function getStopLines(response) {
   }
   info.title('Valmista tuli');
   info.subtitle('');
-  info.body('Loytyi ' + response.features.length + ' pysakkia...');
-  for (var i=0; i<response.features.length; i++) {
+  info.body('Löytyi ' + response.features.length + ' pysäkkiä...');
+  resp: for (var i=0; i<response.features.length; i++) {
     if (!response.features[i]) {
       continue;
     }
     var id = response.features[i].properties.id;
     for (var j=0; j<favorites.length; j++) {
       if (id == favorites[j].id) {
-        continue;
+        continue resp;
       }
     }
-    var name = descandify(response.features[i].properties.name);
+    var code = response.features[i].properties.code;
+    var name = code + ' ' + utf8(response.features[i].properties.name);
     var dist = response.features[i].properties.dist;
+    var addr = utf8(response.features[i].properties.addr);
     // console.log("got stop: " + id + ", name " + name + ", dist " + dist);
     if (!id || !name || !dist) {
       // console.log("Information missing, skipping stop...");
@@ -103,7 +106,8 @@ function getStopLines(response) {
     else {
       dist = dist + " m";
     }
-    stops.push({id: id, title: name, subtitle: dist});
+    // stops.push({id: id, code: code, addr: addr, title: name, subtitle: dist});
+    stops.push({id: id, addr: addr, title: name, subtitle: dist});
   }
   menu.items(1, stops);
   menu.on('select', function(e) {
@@ -130,7 +134,7 @@ function getStopLines(response) {
         position: new Vector2(0, 0),
         size: new Vector2(144, 30),
         font: 'GOTHIC_24_BOLD',
-        text: descandify(data.stopname),
+        text: utf8(data.stopname),
         textAlign: 'center'
       });
       wind.add(stopfield);
@@ -138,7 +142,7 @@ function getStopLines(response) {
         position: new Vector2(0, 40),
         size: new Vector2(144, 30),
         font: 'GOTHIC_24',
-        text: data.line + ' ' + descandify(data.dest),
+        text: data.line + ' ' + utf8(data.dest),
         textAlign: 'center'
       });
       wind.add(linefield);
@@ -173,11 +177,14 @@ function getStopLines(response) {
       menu.items(1).push(e.item);
       favorites.splice(e.itemIndex, 1);
     }
-    Settings.data('favorites', favorites);
     menu.items(0, favorites);
+    for (var f in favorites) {
+      favorites[f].subtitle = favorites[f].addr;
+    }
+    Settings.data('favorites', favorites);
   });
   if (menu.items(0).length < 1) {
-    menu.items(0, [{id: helpId, title: 'Ei suosikkeja', subtitle: 'Ks. lisatietoja...'}]);
+    menu.items(0, [{id: helpId, title: 'Ei suosikkeja', subtitle: 'Ks. lisätietoja...'}]);
   }
   menu.show();
   info.hide();
@@ -200,7 +207,7 @@ function refreshStops(stops) {
       // console.log("OK, got " + deps.length + " departures");
       if (deps.length) {
         timeTables = {};
-        timeTables[helpId] = [{title: 'Lisaa suosikki', subtitle: 'pitkalla painalluksella'}];
+        timeTables[helpId] = [{title: 'Lisää suosikki', subtitle: 'pitkään painamalla'}];
         for (var j=0; j<deps.length; j++) {
           var dep = deps[j];
           var stopId = dep.stop;
@@ -211,7 +218,8 @@ function refreshStops(stops) {
           var d = new Date(time * 1000);
           var m = d.getMinutes();
           m = (m < 10) ? "0" + m.toString() + "" : m;
-          timeTables[stopId].push({title: [d.getHours(), m].join(":") + ' ' + dep.line, subtitle: descandify(dep.dest), data: dep});
+          timeTables[stopId].push({title: dep.line + ' @ ' + [d.getHours(), m].join(":"),
+                                   subtitle: utf8(dep.dest), data: dep});
         }
         for (var sect=0; sect<=1; sect++) {
           for (var it in menu.items(sect)) {
@@ -220,9 +228,14 @@ function refreshStops(stops) {
             if (!current.id || !timeTables[current.id] || (current.id == helpId)) {
               continue;
             }
-            var firstDep = timeTables[current.id][0];
+            var magicSub = (sect == 1) ? current.subtitle + '   ' : '';
+            var nextDeps = [];
+            for (var n=0; n<(2-sect); n++) {
+              nextDeps.push(timeTables[current.id][n].title);
+            }
+            magicSub += nextDeps.join(', ');
             var newItem = {id: current.id, title: current.title,
-                           subtitle: current.subtitle + ', ' + firstDep.title};
+                           subtitle: magicSub};
             menu.item(sect, it, newItem);
           }
         }
@@ -230,12 +243,9 @@ function refreshStops(stops) {
     },
     logError
   );
+  menu.show();
 }
 
-function descandify(str) {
-  str = escape(str).replace(/%20/g, ' ');
-  str = str.replace(/%E8|%E9/g, 'e').replace(/%C8|%C9/g, 'E');
-  str = str.replace(/%E5|%E4/g, 'a').replace(/%C5|%C4/g, 'A');
-  str = str.replace(/%F6/g, 'o').replace(/%D6/g, 'O');
-  return str;
+function utf8(str) {
+  return unescape(encodeURI(str));
 }
