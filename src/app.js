@@ -5,10 +5,13 @@ var Vector2 = require('vector2');
 
 var MAX_DEPS = 10;
 var MAX_STOPS = 10;
-var departureURI = "http://pubtrans.it/hsl/reittiopas/departure-api?max=" + MAX_DEPS;
-var stopsURI = "http://pubtrans.it/hsl/stops?max=" + MAX_STOPS;
-var locationOptions = { "timeout": 15000, "maximumAge": 1000, "enableHighAccuracy": true };
 var R = 6371000; // m
+var departureURI = "http://pubtrans.it/hsl/reittiopas/departure-api?max=" + MAX_DEPS;
+var stopsURI = "http://pubtrans.it/hsl/api-proxy?limit=" + MAX_STOPS +
+  "&request=stops_area&epsg_in=4326&epsg_out=4326&diameter=5000&center_coordinate=";
+var locationOptions = { "timeout": 15000, "maximumAge": 1000, "enableHighAccuracy": true };
+var hslBounds = [60.75, 25.19, 60.12, 24.17];
+
 var stops = [];
 var timeTables = {};
 var watcher;
@@ -62,14 +65,18 @@ var main = new UI.Menu({
 });
 main.on('select', function(e) {
   timeTables = {};
-  if (e.item.id === 0) {
+  if (e.itemIndex === 0) {
     main.sections([
       {title: 'Paikannetaan...'}
     ]);
+    menu.section(1, {title: 'Lähimmät', items: [] });
     navigator.geolocation.getCurrentPosition(locationSuccess, locationError, locationOptions);
     menu.items(1, []);
   }
   else {
+    main.section(1, [
+      {title: 'Haetaan pysäkit...'}
+    ]);
     refreshStops(favorites);
     refreshStops(stops);
   }
@@ -90,7 +97,13 @@ function locationError(error) {
 function locationSuccess(position) {
   var lat = position.coords.latitude;
   var lon = position.coords.longitude;
-  main.section(0, {title: 'Paikannettu', items: [
+  var title = 'Paikannettu';
+  if (lat > hslBounds[0] || lon > hslBounds[1] || lat < hslBounds[2] || lon < hslBounds[3]) {
+    title = 'Arvottu paikka';
+    lat = Math.random()/10 + 60.17;
+    lon = Math.random()/5 + 24.8;
+  }
+  main.section(0, {title: title, items: [
     {
       title: Math.round(lat*10000)/10000 + ',' + Math.round(lon*10000)/10000,
       subtitle: 'Päivitä sijainti'
@@ -98,7 +111,7 @@ function locationSuccess(position) {
   ]});
   main.item(0, 1, {title: 'Haetaan pysäkit...'});
   // console.log("Got location " + lat + ',' + lon);
-  var href = stopsURI + '&lat=' + lat + '&lon=' + lon;
+  var href = stopsURI + lon + ',' + lat;
   // console.log("Getting " + href);
   ajax(
     {url: href, type: 'json'},
@@ -114,25 +127,25 @@ function logError(e) {
 
 function buildStopMenu(response) {
   stops = [];
-  if (!response || !response.features || !response.features[0]) {
+  if (!response || !response[0]) {
     return false;
   }
-  resp: for (var i=0; i<response.features.length; i++) {
-    if (!response.features[i]) {
+  resp: for (var i=0; i<response.length; i++) {
+    if (!response[i]) {
       continue;
     }
-    var id = response.features[i].properties.id;
+    var id = response[i].code;
     for (var j=0; j<favorites.length; j++) {
       if (id == favorites[j].id) {
         continue resp;
       }
     }
-    var coords = response.features[i].geometry.coordinates;
+    var coords = response[i].coords.split(',');
     stopLocations[id] = {latitude: coords[1], longitude: coords[0]};
-    var code = response.features[i].properties.code;
-    var name = code + ' ' + utf8(response.features[i].properties.name);
-    var dist = response.features[i].properties.dist;
-    var addr = utf8(response.features[i].properties.addr);
+    var code = response[i].codeShort;
+    var name = code + ' ' + utf8(response[i].name);
+    var dist = response[i].dist;
+    var addr = utf8(response[i].address);
     // console.log("got stop: " + id + ", name " + name + ", dist " + dist);
     if (!id || !name || !dist) {
       // console.log("Information missing, skipping stop...");
@@ -171,8 +184,6 @@ function buildStopMenu(response) {
       var s = d.getSeconds();
       s = (s < 10) ? "0" + s.toString() + "" : s;
       var wind = new UI.Window({fullscreen: true});
-      // var bg = new UI.Rect({ size: Vector2(144, 168), backgroundColor: 'white' });
-      // wind.add(bg);
       var stopfield = new UI.Text({
         position: new Vector2(0, 10),
         size: new Vector2(144, 15),
