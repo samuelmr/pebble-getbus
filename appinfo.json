@@ -3,7 +3,7 @@
     "capabilities": [
         "location"
     ],
-    "companyName": "Samuel Rinnetmaki",
+    "companyName": "samuel@blip.at",
     "longName": "Get Bus",
     "projectType": "pebblejs",
     "resources": {
@@ -39,7 +39,7 @@
     "shortName": "Get Bus",
     "uuid": "3f091d94-d232-4184-b7e6-a0467a2be4fe",
     "versionCode": 1,
-    "versionLabel": "1.9",
+    "versionLabel": "2.0",
     "watchapp": {
         "watchface": false
     }

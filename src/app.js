@@ -23,15 +23,12 @@ var favorites = Settings.data('favorites') || [];
 var storedLocations = Settings.data('storedLocations') || {};
 var stopLocations = storedLocations;
 
-if (typeof(Number.prototype.toRad) === "undefined") {
-  Number.prototype.toRad = function() {
-    return this * Math.PI / 180;
-  };
+function toRad(number) {
+  return number * Math.PI / 180;  
 }
-if (typeof(Number.prototype.toDeg) === "undefined") {
-  Number.prototype.toDeg = function() {
-    return this * 180 / Math.PI;
-  };
+
+function toDeg(number) {
+  return number * 180 / Math.PI;
 }
 
 var distfield = new UI.Text({
@@ -125,6 +122,23 @@ function logError(e) {
   console.warn("Error getting " + this.href + ": " + e);
 }
 
+function disthead(pos1, pos2) {
+  var dLat = toRad(pos2.latitude-pos1.latitude);
+  var dLon = toRad(pos2.longitude-pos1.longitude);
+  // return ({distance: dLat, heading: dLon}); 
+  var l1 = toRad(pos1.latitude);
+  var l2 = toRad(pos2.latitude);
+  var a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+          Math.sin(dLon/2) * Math.sin(dLon/2) * Math.cos(l1) * Math.cos(l2); 
+  var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+  var dist = Math.round(R * c);
+  var y = Math.sin(dLon) * Math.cos(l2);
+  var x = Math.cos(l1)*Math.sin(l2) -
+          Math.sin(l1)*Math.cos(l2)*Math.cos(dLon);
+  var head = toDeg(Math.round(Math.atan2(y, x)));
+  return ({distance: dist, heading: head});
+}
+
 function buildStopMenu(response) {
   stops = [];
   if (!response || !response[0]) {
@@ -141,11 +155,14 @@ function buildStopMenu(response) {
       }
     }
     var coords = response[i].coords.split(',');
+    if (!coords) {
+      continue;
+    }
     stopLocations[id] = {latitude: coords[1], longitude: coords[0]};
     var code = response[i].codeShort;
-    var name = code + ' ' + utf8(response[i].name);
+    var name = code + ' ' + response[i].name;
     var dist = response[i].dist;
-    var addr = utf8(response[i].address);
+    var addr = response[i].address;
     // console.log("got stop: " + id + ", name " + name + ", dist " + dist);
     if (!id || !name || !dist) {
       // console.log("Information missing, skipping stop...");
@@ -160,7 +177,9 @@ function buildStopMenu(response) {
     stops.push({id: id, addr: addr, dist: dist, title: name, subtitle: dist});
   }
   menu.items(1, stops);
-  main.item(0, 1, {title: stops.length + ' pysäkkiä', subtitle: 'Päivitä aikataulut'});
+  var myTitle = stops.length + ' pysäkkiä';
+  var mySub = 'Päivitä aikataulut';
+  main.item(0, 1, {title: myTitle, subtitle: mySub});
   menu.on('select', function(e) {
     var items = timeTables[e.item.id] || errorItems;
     var stopMenu = new UI.Menu({
@@ -179,6 +198,9 @@ function buildStopMenu(response) {
       }
       var deptime = data.rtime || data.time;
       var d = new Date(deptime * 1000);
+      var h = d.getHours();
+      // hours with leading zeros because TimeText %X has them
+      h = (h < 10) ? "0" + h.toString() + "" : h;
       var m = d.getMinutes();
       m = (m < 10) ? "0" + m.toString() + "" : m;
       var s = d.getSeconds();
@@ -190,7 +212,7 @@ function buildStopMenu(response) {
         font: 'GOTHIC_14_BOLD',
         backgroundColor: 'black',
         color: 'white',
-        text: utf8(data.stopname),
+        text: data.stopname,
         textAlign: 'center',
         textOverflow: 'ellipsis'
       });
@@ -237,7 +259,7 @@ function buildStopMenu(response) {
         font: 'GOTHIC_24',
         backgroundColor: 'white',
         color: 'black',
-        text: data.line + ' ' + utf8(data.dest),
+        text: data.line + ' ' + data.dest,
         textAlign: 'center',
         textOverflow: 'ellipsis'
       });
@@ -248,8 +270,8 @@ function buildStopMenu(response) {
         font: 'BITHAM_30_BLACK',
         backgroundColor: 'white',
         color: 'black',
-        text: [d.getHours(), m, s].join(":"),
-        textAlign: 'center',
+        text: [h, m, s].join(":"),
+        textAlign: 'lef',
         textOverflow: 'ellipsis'
       });
       wind.add(depfield);
@@ -260,7 +282,7 @@ function buildStopMenu(response) {
         backgroundColor: 'white',
         color: 'black',
         text: '%X',
-        textAlign: 'center',
+        textAlign: 'left',
         textOverflow: 'ellipsis'
       });
       wind.add(timefield);   
@@ -324,7 +346,7 @@ function refreshStops(stops) {
           var m = d.getMinutes();
           m = (m < 10) ? "0" + m.toString() + "" : m;
           timeTables[stopId].push({title: dep.line + ' @ ' + [d.getHours(), m].join(":"),
-                                   subtitle: utf8(dep.dest), data: dep});
+                                   subtitle: dep.dest, data: dep});
         }
         for (var sect=0; sect<=1; sect++) {
           for (var it in menu.items(sect)) {
@@ -349,25 +371,4 @@ function refreshStops(stops) {
     logError
   );
   menu.show();
-}
-
-function utf8(str) {
-  return unescape(encodeURI(str));
-}
-
-function disthead(pos1, pos2) {
-  var dLat = (pos2.latitude-pos1.latitude).toRad();
-  var dLon = (pos2.longitude-pos1.longitude).toRad();
-  // return ({distance: dLat, heading: dLon}); 
-  var l1 = pos1.latitude.toRad();
-  var l2 = pos2.latitude.toRad();
-  var a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-          Math.sin(dLon/2) * Math.sin(dLon/2) * Math.cos(l1) * Math.cos(l2); 
-  var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
-  var dist = Math.round(R * c);
-  var y = Math.sin(dLon) * Math.cos(l2);
-  var x = Math.cos(l1)*Math.sin(l2) -
-          Math.sin(l1)*Math.cos(l2)*Math.cos(dLon);
-  var head = Math.round(Math.atan2(y, x).toDeg());
-  return ({distance: dist, heading: head});
 }
