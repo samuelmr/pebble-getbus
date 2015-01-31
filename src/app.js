@@ -265,6 +265,7 @@ function buildStopMenu(response) {
       });
       wind.add(timefield);   
       wind.show();
+      wind.on('hide', function() {if (watcher) navigator.geolocation.clearWatch(watcher);});
     });
     stopMenu.show();
   });
