@@ -1,5 +1,5 @@
-pebble-getbus
-=============
+Get Bus
+=======
 
 HSL:n pysäkit ja niiden aikataulut ranteeseen.
 
