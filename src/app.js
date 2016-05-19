@@ -1,11 +1,16 @@
 var ajax = require('ajax');
+var Feature = require('platform/feature');
 var Settings = require('settings');
 var UI = require('ui');
 var Vector2 = require('vector2');
+var Vibe = require('ui/vibe');
 
+var ALERT_BEFORE = 3; // vibrate and change colors 3 mins before departure
 var MAX_DEPS = 10;
 var MAX_STOPS = 10;
 var R = 6371000; // m
+var res = Feature.resolution();
+
 var departureURI = "http://pubtrans.it/hsl/reittiopas/departure-api?max=" + MAX_DEPS;
 var stopsURI = "http://pubtrans.it/hsl/api-proxy?limit=" + MAX_STOPS +
   "&request=stops_area&epsg_in=4326&epsg_out=4326&diameter=5000&center_coordinate=";
@@ -14,10 +19,12 @@ var hslBounds = [60.75, 25.19, 60.12, 24.17];
 
 var stops = [];
 var timeTables = {};
-var watcher;
+var watcher, alertTimeout, lateTimeout;
+var linefield, depfield, timefield;
 
 var errorItems = [{title: 'Ei tietoja', subtitle: 'Kokeile uudelleen...'}];
 var helpId = 'help';
+var randomLocation = false;
 
 var favorites = Settings.data('favorites') || [];
 var storedLocations = Settings.data('storedLocations') || {};
@@ -32,8 +39,8 @@ function toDeg(number) {
 }
 
 var distfield = new UI.Text({
-  position: new Vector2(0, 26),
-  size: new Vector2(144, 20),
+  position: new Vector2(0, 20),
+  size: new Vector2(res.x, 20),
   font: 'GOTHIC_18',
   backgroundColor: 'black',
   color: 'white',
@@ -99,6 +106,7 @@ function locationSuccess(position) {
     title = 'Arvottu paikka';
     lat = Math.random()/10 + 60.17;
     lon = Math.random()/5 + 24.8;
+    randomLocation = true;
   }
   main.section(0, {title: title, items: [
     {
@@ -109,7 +117,7 @@ function locationSuccess(position) {
   main.item(0, 1, {title: 'Haetaan pysäkit...'});
   // console.log("Got location " + lat + ',' + lon);
   var href = stopsURI + lon + ',' + lat;
-  // console.log("Getting " + href);
+  console.log("Getting " + href);
   ajax(
     {url: href, type: 'json'},
     buildStopMenu,
@@ -123,19 +131,26 @@ function logError(e) {
 }
 
 function disthead(pos1, pos2) {
-  var dLat = toRad(pos2.latitude-pos1.latitude);
-  var dLon = toRad(pos2.longitude-pos1.longitude);
-  // return ({distance: dLat, heading: dLon}); 
-  var l1 = toRad(pos1.latitude);
-  var l2 = toRad(pos2.latitude);
-  var a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-          Math.sin(dLon/2) * Math.sin(dLon/2) * Math.cos(l1) * Math.cos(l2); 
-  var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
-  var dist = Math.round(R * c);
-  var y = Math.sin(dLon) * Math.cos(l2);
-  var x = Math.cos(l1)*Math.sin(l2) -
-          Math.sin(l1)*Math.cos(l2)*Math.cos(dLon);
-  var head = toDeg(Math.round(Math.atan2(y, x)));
+  var dist,head;
+  if (randomLocation) {
+    dist = Math.round(Math.random()*999);
+    head = Math.round(Math.random()*360);
+  }
+  else {
+    var dLat = toRad(pos2.latitude-pos1.latitude);
+    var dLon = toRad(pos2.longitude-pos1.longitude);
+    // return ({distance: dLat, heading: dLon}); 
+    var l1 = toRad(pos1.latitude);
+    var l2 = toRad(pos2.latitude);
+    var a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.sin(dLon/2) * Math.sin(dLon/2) * Math.cos(l1) * Math.cos(l2); 
+    var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+    dist = Math.round(R * c);
+    var y = Math.sin(dLon) * Math.cos(l2);
+     var x = Math.cos(l1)*Math.sin(l2) -
+            Math.sin(l1)*Math.cos(l2)*Math.cos(dLon);
+    head = toDeg(Math.round(Math.atan2(y, x)));
+  }
   return ({distance: dist, heading: head});
 }
 
@@ -196,8 +211,24 @@ function buildStopMenu(response) {
       if (!data) {
         return false;
       }
+      var bgNow = 'white';
       var deptime = data.rtime || data.time;
       var d = new Date(deptime * 1000);
+      var now = new Date();
+      var lateTime = (d - now);
+      var alertTime = lateTime - (ALERT_BEFORE * 60 * 1000);
+      if (alertTime < 0) {
+        bgNow = 'yellow';
+      }
+      else {
+        alertTimeout = setTimeout(triggerAlert, alertTime);
+      }
+      if (lateTime < 0) {
+        bgNow = 'red';
+      }
+      else {
+        lateTimeout = setTimeout(triggerLate, lateTime);  
+      }
       var h = d.getHours();
       // hours with leading zeros because TimeText %X has them
       h = (h < 10) ? "0" + h.toString() + "" : h;
@@ -206,17 +237,6 @@ function buildStopMenu(response) {
       var s = d.getSeconds();
       s = (s < 10) ? "0" + s.toString() + "" : s;
       var wind = new UI.Window({fullscreen: true});
-      var stopfield = new UI.Text({
-        position: new Vector2(0, 10),
-        size: new Vector2(144, 15),
-        font: 'GOTHIC_14_BOLD',
-        backgroundColor: 'black',
-        color: 'white',
-        text: data.stopname,
-        textAlign: 'center',
-        textOverflow: 'ellipsis'
-      });
-      wind.add(stopfield);
       distfield.text(e.item.addr);
       wind.add(distfield);
       if (stopLocations[data.stop]) {
@@ -253,50 +273,73 @@ function buildStopMenu(response) {
           }
         });
       }
-      var linefield = new UI.Text({
+      var stopfield = new UI.Text({
+        position: new Vector2(0, 40),
+        size: new Vector2(res.x, 15),
+        font: 'GOTHIC_14_BOLD',
+        backgroundColor: 'black',
+        color: 'white',
+        text: data.stopname,
+        textAlign: 'center',
+        textOverflow: 'ellipsis'
+      });
+      wind.add(stopfield);
+      linefield = new UI.Text({
         position: new Vector2(0, 60),
-        size: new Vector2(144, 30),
+        size: new Vector2(res.x, 30),
         font: 'GOTHIC_24',
-        backgroundColor: 'white',
+        backgroundColor: bgNow,
         color: 'black',
         text: data.line + ' ' + data.dest,
         textAlign: 'center',
         textOverflow: 'ellipsis'
       });
       wind.add(linefield);
-      var depfield = new UI.Text({
+      depfield = new UI.Text({
         position: new Vector2(0, 90),
-        size: new Vector2(144, 30),
+        size: new Vector2(res.x, 30),
         font: 'BITHAM_30_BLACK',
-        backgroundColor: 'white',
+        backgroundColor: bgNow,
         color: 'black',
         text: [h, m, s].join(":"),
-        textAlign: 'lef',
+        textAlign: Feature.round('center', 'left'),
         textOverflow: 'ellipsis'
       });
       wind.add(depfield);
-      var timefield = new UI.TimeText({
+      timefield = new UI.TimeText({
         position: new Vector2(0, 120),
-        size: new Vector2(144, 48),
+        size: new Vector2(res.x, res.y-120),
         font: 'BITHAM_30_BLACK',
-        backgroundColor: 'white',
+        backgroundColor: bgNow,
         color: 'black',
         text: '%X',
-        textAlign: 'left',
+        textAlign: Feature.round('center', 'left'),
         textOverflow: 'ellipsis'
       });
-      wind.add(timefield);   
+      wind.add(timefield);
       wind.show();
-      wind.on('hide', function() {if (watcher) navigator.geolocation.clearWatch(watcher);});
+      wind.on('hide', function() {
+        if (alertTimeout) {
+          clearTimeout(alertTimeout);
+        }
+        if (lateTimeout) {
+          clearTimeout(lateTimeout);
+        }
+        if (watcher) {
+          navigator.geolocation.clearWatch(watcher);
+        }
+      });
     });
     stopMenu.show();
   });
   menu.on('longSelect', function(e) {
     if (e.sectionIndex > 0) {
-      // console.log('Adding ' + e.item.id + ' to favorites.');
-      favorites.push(e.item);
-      storedLocations[e.item.id] = stopLocations[e.item.id];
-      menu.items(e.sectionIndex).splice(e.itemIndex, 1);
+      if (e.item.id) {
+        // console.log('Adding ' + e.item.id + ' to favorites.');
+        favorites.push(e.item);
+        storedLocations[e.item.id] = stopLocations[e.item.id];
+        menu.items(e.sectionIndex).splice(e.itemIndex, 1);
+      }
     }
     else {
       // console.log('Removing ' + e.item.id + ' from favorites.');
@@ -318,7 +361,18 @@ function buildStopMenu(response) {
   menu.show();
   refreshStops(stops);
 }
-
+function triggerAlert() {
+  Vibe.vibrate('long');
+  linefield.backgroundColor('yellow');
+  depfield.backgroundColor('yellow');
+  timefield.backgroundColor('yellow');    
+}
+function triggerLate() {
+  Vibe.vibrate('double');
+  linefield.backgroundColor('red');
+  depfield.backgroundColor('red');
+  timefield.backgroundColor('red');    
+}
 function refreshStops(stops) {
   if (stops.length <= 0) {
     // console.log("stops.length = " + stops.length);
@@ -328,7 +382,7 @@ function refreshStops(stops) {
   for (var i=0; i<stops.length; i++) {
     href += "&stops%5B%5D=" + stops[i].id;
   }
-  // console.log("Getting " + href);
+  console.log("Getting " + href);
   ajax(
     {url: href, type: 'json'},
     function(deps) {

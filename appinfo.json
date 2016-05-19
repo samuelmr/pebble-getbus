@@ -3,7 +3,7 @@
     "capabilities": [
         "location"
     ],
-    "companyName": "samuel@blip.at",
+    "companyName": "Samuel Rinnetm\u00e4ki",
     "longName": "Get Bus",
     "projectType": "pebblejs",
     "resources": {
@@ -11,17 +11,17 @@
             {
                 "file": "images/menu_icon.png",
                 "name": "IMAGE_MENU_ICON",
-                "type": "png"
+                "type": "bitmap"
             },
             {
                 "file": "images/logo_splash.png",
                 "name": "IMAGE_LOGO_SPLASH",
-                "type": "png"
+                "type": "bitmap"
             },
             {
                 "file": "images/tile_splash.png",
                 "name": "IMAGE_TILE_SPLASH",
-                "type": "png"
+                "type": "bitmap"
             },
             {
                 "file": "fonts/UbuntuMono-Regular.ttf",
@@ -32,15 +32,22 @@
                 "file": "images/bus.png",
                 "menuIcon": true,
                 "name": "IMAGES_BUS_PNG",
-                "type": "png"
+                "type": "bitmap"
             }
         ]
     },
+    "sdkVersion": "3",
     "shortName": "Get Bus",
+    "targetPlatforms": [
+        "aplite",
+        "basalt",
+        "chalk"
+    ],
     "uuid": "3f091d94-d232-4184-b7e6-a0467a2be4fe",
     "versionCode": 1,
-    "versionLabel": "2.0",
+    "versionLabel": "2.2",
     "watchapp": {
+        "hiddenApp": false,
         "watchface": false
     }
 }
